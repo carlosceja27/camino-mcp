@@ -84,7 +84,30 @@ def test_overdue_ignores_submitted_and_future_items():
     assert [a["id"] for a in result["assignments"]] == [1]
 
 
-def test_cross_course_failure_is_explicit_not_silent_partial_success():
+def test_inaccessible_course_is_skipped_and_flagged_not_fatal():
+    def handler(request):
+        if request.url.path.endswith("/courses"):
+            return httpx.Response(
+                200,
+                json=[{"id": 1, "name": "Open"}, {"id": 2, "name": "Locked"}]
+                if request.url.params.get("enrollment_state") == "active"
+                else [],
+            )
+        if "favorites" in request.url.path:
+            return httpx.Response(200, json=[])
+        if "/courses/2/" in request.url.path:
+            return httpx.Response(403, json={"errors": [{"message": "unauthorized"}]})
+        return httpx.Response(200, json=[])
+
+    result = make_service(handler).upcoming(
+        7, now=datetime.fromisoformat("2026-09-24T12:00:00-07:00")
+    )
+    assert result["complete"] is False
+    assert result["skipped_courses"] == [{"course_id": 2, "course_name": "Locked"}]
+    assert "warning" in result
+
+
+def test_cross_course_server_failure_is_explicit_not_silent_partial_success():
     def handler(request):
         if request.url.path.endswith("/courses"):
             return httpx.Response(
@@ -95,9 +118,9 @@ def test_cross_course_failure_is_explicit_not_silent_partial_success():
             )
         if "favorites" in request.url.path:
             return httpx.Response(200, json=[])
-        return httpx.Response(403 if "/courses/2/" in request.url.path else 200, json=[])
+        return httpx.Response(500 if "/courses/2/" in request.url.path else 200, json=[])
 
-    with pytest.raises(CaminoError, match="course 2"):
+    with pytest.raises(CaminoError, match="HTTP 500"):
         make_service(handler).upcoming(7, now=datetime.fromisoformat("2026-09-24T12:00:00-07:00"))
 
 

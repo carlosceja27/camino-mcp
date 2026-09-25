@@ -14,7 +14,10 @@ def test_server_tools_return_explicit_safe_errors_without_token(monkeypatch):
         server.grades(),
     ]
     assert all(
-        result == {"complete": False, "error": "CAMINO_API_TOKEN is not set."} for result in results
+        result["complete"] is False
+        and result["error"].startswith("CAMINO_API_TOKEN is not set.")
+        and "Approved Integrations" in result["error"]
+        for result in results
     )
 
 
